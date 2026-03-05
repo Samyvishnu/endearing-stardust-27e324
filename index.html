@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SENTINEL · LIVE SATELLITE MAP</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+:root{
+  --cyn:#00d4f0;--grn:#00ff88;--amb:#ff9500;--red:#ff2244;--dim:#0a2540;
+  --bg:#000c1c;--panel:rgba(0,8,20,0.88);--border:rgba(0,80,140,0.4);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:#7ab8d0;font-family:'Share Tech Mono',monospace;overflow:hidden;height:100vh;width:100vw;}
+#map{position:absolute;inset:0;z-index:0;}
+
+/* dark map filter */
+.leaflet-tile-pane{filter:brightness(0.65) saturate(1.2) hue-rotate(10deg);}
+
+/* ── TOPBAR ── */
+#topbar{
+  position:absolute;top:0;left:0;right:0;height:50px;z-index:1000;
+  background:rgba(0,6,18,0.95);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 14px;gap:12px;
+  backdrop-filter:blur(12px);
+}
+.logo{font-family:'Orbitron',monospace;font-size:18px;font-weight:900;color:var(--cyn);letter-spacing:6px;text-shadow:0 0 20px rgba(0,212,240,.5);}
+.logo-sub{font-size:7px;color:#1e4a60;letter-spacing:4px;line-height:1.2;}
+.spacer{flex:1;}
+.class-tag{font-size:8px;color:var(--amb);border:1px solid rgba(255,149,0,.4);padding:2px 10px;letter-spacing:3px;background:rgba(255,149,0,.05);}
+#utc-clock{font-family:'Orbitron',monospace;font-size:16px;color:var(--amb);letter-spacing:2px;min-width:130px;text-align:center;}
+.live-badge{display:flex;align-items:center;gap:5px;border:1px solid rgba(255,34,68,.5);padding:2px 9px;font-size:8px;color:var(--red);letter-spacing:2px;background:rgba(255,34,68,.06);}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.pulse-dot{width:6px;height:6px;border-radius:50%;display:inline-block;}
+.pd-red{background:var(--red);box-shadow:0 0 6px var(--red);animation:blink 1s infinite;}
+.pd-grn{background:var(--grn);box-shadow:0 0 6px var(--grn);animation:blink 2.2s infinite;}
+.pd-amb{background:var(--amb);box-shadow:0 0 6px var(--amb);animation:blink 1.7s infinite;}
+.pd-cyn{background:var(--cyn);box-shadow:0 0 6px var(--cyn);animation:blink 3s infinite;}
+
+/* ── LAYER BUTTONS ── */
+#layer-bar{display:flex;gap:4px;margin-left:12px;}
+.lbtn{font-family:'Share Tech Mono',monospace;font-size:9px;padding:3px 10px;background:none;border:1px solid #002244;color:#2a5a70;cursor:pointer;letter-spacing:2px;transition:all .2s;}
+.lbtn.on{background:#001428;color:var(--cyn);border-color:var(--cyn);box-shadow:0 0 8px rgba(0,212,240,.2);}
+.lbtn:hover{border-color:rgba(0,212,240,.4);}
+
+/* ── SIDE PANELS ── */
+.side-panel{
+  position:absolute;top:58px;width:265px;z-index:900;
+  background:var(--panel);border:1px solid var(--border);
+  backdrop-filter:blur(16px);
+  max-height:calc(100vh - 170px);overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:#002244 transparent;
+}
+#left-panel{left:8px;}
+#right-panel{right:8px;}
+
+.p-section{padding:9px 11px;border-bottom:1px solid rgba(0,60,100,.3);}
+.p-title{font-size:8px;letter-spacing:3px;color:var(--cyn);text-transform:uppercase;margin-bottom:7px;display:flex;align-items:center;gap:5px;}
+.p-title::before{content:'◈';font-size:9px;}
+
+.big-num{font-family:'Orbitron',monospace;font-size:24px;color:var(--cyn);letter-spacing:2px;}
+.big-sub{font-size:7px;color:#1a3a50;letter-spacing:2px;margin-top:1px;}
+
+.item{padding:4px 0;border-bottom:1px solid rgba(0,20,40,.6);font-size:9px;}
+.item-row{display:flex;justify-content:space-between;align-items:center;}
+.badge{font-size:7px;padding:1px 5px;border-radius:1px;letter-spacing:1px;}
+.b-recon{color:var(--amb);border:1px solid var(--amb);background:rgba(255,149,0,.06);}
+.b-sar  {color:var(--grn);border:1px solid var(--grn);background:rgba(0,255,136,.04);}
+.b-opt  {color:var(--cyn);border:1px solid var(--cyn);background:rgba(0,212,240,.04);}
+.b-nav  {color:#aa88ff;border:1px solid #aa88ff;background:rgba(170,136,255,.04);}
+.b-com  {color:#44aaff;border:1px solid #44aaff;background:rgba(68,170,255,.04);}
+.b-div  {color:var(--amb);border:1px solid var(--amb);background:rgba(255,149,0,.06);}
+.b-nrm  {color:var(--grn);border:1px solid var(--grn);background:rgba(0,255,136,.04);}
+.b-crit {color:var(--red);border:1px solid var(--red);background:rgba(255,34,68,.06);}
+.sat-name{color:#6a9cb8;font-size:9px;}
+.sat-nation{font-size:8px;color:#1e4060;}
+.jam-name{color:var(--red);font-size:10px;}
+.jam-meta{font-size:7px;color:#1e4060;margin-top:1px;}
+
+@keyframes alertGlow{0%,100%{box-shadow:0 0 4px rgba(255,34,68,.3)}50%{box-shadow:0 0 10px rgba(255,34,68,.7)}}
+.alert{border:1px solid rgba(255,34,68,.6);background:rgba(255,34,68,.06);padding:5px 8px;margin:4px 0;font-size:8px;letter-spacing:1px;animation:alertGlow 2s infinite;}
+.warn{border:1px solid rgba(255,149,0,.5);background:rgba(255,149,0,.05);padding:5px 8px;margin:4px 0;font-size:8px;letter-spacing:1px;}
+
+.sigint-row{display:flex;justify-content:space-between;font-size:8px;color:#1e4060;padding:2px 0;letter-spacing:1px;}
+.sigint-val{color:var(--amb);}
+.sigint-val.red{color:var(--red);}
+.sigint-val.cyn{color:var(--cyn);}
+
+/* ── INTEL FEED ── */
+.feed{height:100px;overflow:hidden;position:relative;}
+.feed-item{font-size:8px;padding:2px 0;border-bottom:1px solid rgba(0,20,40,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fi-t{color:#1a4a60;margin-right:5px;}
+.fi-info{color:#2a6a8a;}
+.fi-warn{color:#bb7700;}
+.fi-crit{color:#cc2233;}
+
+/* ── TIMELINE ── */
+#timeline{
+  position:absolute;bottom:0;left:0;right:0;height:108px;z-index:1000;
+  background:rgba(0,6,18,0.95);border-top:1px solid var(--border);
+  padding:9px 16px 10px;backdrop-filter:blur(12px);
+  display:flex;flex-direction:column;gap:6px;
+}
+.tl-top{display:flex;justify-content:space-between;align-items:center;}
+.tl-label{font-size:7px;color:#1e4060;letter-spacing:3px;}
+.tl-controls{display:flex;gap:6px;align-items:center;}
+.tl-btn{font-family:'Share Tech Mono',monospace;font-size:9px;padding:2px 12px;background:none;border:1px solid #002244;color:#2a5a70;cursor:pointer;letter-spacing:2px;transition:all .2s;}
+.tl-btn.on{background:#001428;color:var(--cyn);border-color:var(--cyn);}
+.tl-btn:hover{border-color:rgba(0,212,240,.4);}
+#t-readout{font-family:'Orbitron',monospace;font-size:13px;color:var(--amb);letter-spacing:1px;min-width:90px;text-align:right;}
+.tl-bar{height:6px;background:#001020;border-radius:2px;cursor:pointer;position:relative;}
+.tl-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--cyn) 0%,var(--amb) 60%,var(--red) 85%,#ff88aa 100%);position:relative;transition:width .1s linear;}
+.tl-fill::after{content:'';position:absolute;right:-5px;top:-4px;width:12px;height:12px;background:var(--amb);border-radius:50%;box-shadow:0 0 8px var(--amb);}
+.tl-marker{position:absolute;top:-7px;width:1px;height:18px;pointer-events:none;}
+.tl-marker::after{content:attr(data-lbl);position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-size:7px;white-space:nowrap;letter-spacing:1px;}
+.tl-ticks{display:flex;justify-content:space-between;font-size:7px;color:#1a3a50;letter-spacing:1px;padding:0 1px;}
+
+/* ── MAP HUD ── */
+.hud{position:absolute;z-index:800;font-size:8px;color:#1e4060;letter-spacing:1px;line-height:1.8;pointer-events:none;}
+.hud-bl{bottom:118px;left:275px;}
+.hud-br{bottom:118px;right:275px;text-align:right;}
+.hud .h{color:rgba(0,212,240,.5);}
+
+/* ── PHASE BANNER ── */
+#phase-banner{
+  position:absolute;top:58px;left:50%;transform:translateX(-50%);
+  z-index:950;background:rgba(0,4,14,.92);border:1px solid rgba(255,149,0,.4);
+  padding:5px 22px;font-size:9px;color:var(--amb);letter-spacing:3px;
+  backdrop-filter:blur(8px);white-space:nowrap;
+  text-shadow:0 0 10px rgba(255,149,0,.5);
+}
+
+/* custom leaflet popup */
+.leaflet-popup-content-wrapper{background:rgba(0,8,20,.95);border:1px solid var(--border);border-radius:0;color:#7ab8d0;font-family:'Share Tech Mono',monospace;font-size:9px;padding:0;}
+.leaflet-popup-content{margin:10px 14px;line-height:1.8;}
+.leaflet-popup-tip{background:rgba(0,8,20,.95);}
+.popup-title{color:var(--cyn);font-size:10px;letter-spacing:2px;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:4px;}
+
+/* scrollbar */
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#002244;}
+</style>
+</head>
+<body>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div>
+    <div class="logo">SENTINEL</div>
+    <div class="logo-sub">OSINT · 4D GEOSPATIAL MONITOR · SATELLITE IMAGERY OVERLAY</div>
+  </div>
+  <div id="layer-bar">
+    <button class="lbtn on" id="lb-sat"  onclick="toggleLyr('sat')">SAT TRACKS</button>
+    <button class="lbtn on" id="lb-jam"  onclick="toggleLyr('jam')">GPS JAM</button>
+    <button class="lbtn on" id="lb-flt"  onclick="toggleLyr('flt')">ADS-B</button>
+    <button class="lbtn on" id="lb-mar"  onclick="toggleLyr('mar')">AIS</button>
+    <button class="lbtn on" id="lb-roi"  onclick="toggleLyr('roi')">ROI</button>
+    <button class="lbtn on" id="lb-cov"  onclick="toggleLyr('cov')">NO-FLY</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="class-tag">OSINT · UNCLASSIFIED · PUBLIC DATA ONLY</div>
+  <div class="spacer"></div>
+  <div id="utc-clock">--:--:-- UTC</div>
+  <div class="live-badge"><span class="pulse-dot pd-red"></span>LIVE</div>
+</div>
+
+<!-- LEFT PANEL -->
+<div class="side-panel" id="left-panel">
+
+  <div class="p-section">
+    <div class="p-title">ORBITAL ASSETS</div>
+    <div class="big-num" id="sat-count">24</div>
+    <div class="big-sub">MULTI-NATION SATELLITES TRACKED</div>
+  </div>
+
+  <div class="p-section" id="sat-list-section">
+    <div class="p-title">ACTIVE PASSES · REGION</div>
+    <div id="sat-list"></div>
+  </div>
+
+  <div class="p-section">
+    <div class="p-title">GPS / GNSS JAMMING</div>
+    <div id="jam-list"></div>
+  </div>
+
+  <div class="p-section">
+    <div class="p-title">SIGINT INDICATORS</div>
+    <div class="sigint-row"><span>BURST COMMS SPIKE</span><span class="sigint-val">+847%</span></div>
+    <div class="sigint-row"><span>MIL SAT BANDWIDTH</span><span class="sigint-val">+312%</span></div>
+    <div class="sigint-row"><span>RADAR EMISSIONS</span><span class="sigint-val red">ELEVATED</span></div>
+    <div class="sigint-row"><span>HF COMMS TRAFFIC</span><span class="sigint-val">+189%</span></div>
+    <div class="sigint-row"><span>AIS BLACKOUT ZONE</span><span class="sigint-val red">ACTIVE</span></div>
+    <div class="sigint-row"><span>ELINT INTERCEPTS</span><span class="sigint-val cyn">NOMINAL</span></div>
+    <div class="sigint-row"><span>NOTAM FIR CLOSURES</span><span class="sigint-val red">7 ACTIVE</span></div>
+    <div class="sigint-row"><span>STARLINK TRAFFIC ▲</span><span class="sigint-val">+340%</span></div>
+  </div>
+
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="side-panel" id="right-panel">
+
+  <div class="p-section">
+    <div class="p-title">ADS-B AIRSPACE FEED</div>
+    <div class="big-num" id="flt-count">847</div>
+    <div class="big-sub">REGIONAL FLIGHTS TRACKED</div>
+  </div>
+
+  <div class="p-section">
+    <div class="alert">⚠ 12 ACTIVE DIVERSIONS · FIR AVOIDANCE</div>
+    <div id="flt-list"></div>
+  </div>
+
+  <div class="p-section">
+    <div class="p-title">AIS MARITIME FEED</div>
+    <div class="big-num">8</div>
+    <div class="big-sub">VESSELS IN AREA OF INTEREST</div>
+    <div id="ship-list" style="margin-top:5px;"></div>
+  </div>
+
+  <div class="p-section">
+    <div class="p-title">OSINT INTEL STREAM</div>
+    <div class="feed" id="intel-feed"></div>
+  </div>
+
+</div>
+
+<!-- PHASE BANNER -->
+<div id="phase-banner">T−60:00 · SATELLITE REPOSITIONING & TASKING</div>
+
+<!-- MAP HUD -->
+<div class="hud hud-bl">
+  <div class="h">◈ DATA SOURCES</div>
+  <div>ADS-B Exchange · OpenSky Network</div>
+  <div>MarineTraffic · OSINT Social</div>
+  <div>CelesTrak TLE · NOTAMs</div>
+  <div>ESRI World Imagery · ESA Copernicus</div>
+</div>
+<div class="hud hud-br">
+  <div class="h">◈ RECONSTRUCTION CONFIDENCE</div>
+  <div style="color:rgba(0,255,136,.6)">HIGH · CROSS-REFERENCED SOURCES</div>
+  <div style="margin-top:4px;" class="h">◈ SAR COVERAGE</div>
+  <div id="hud-sar-cov">SENTINEL-1A · KOMPSAT-5 · CSO-3</div>
+</div>
+
+<!-- TIMELINE -->
+<div id="timeline">
+  <div class="tl-top">
+    <div class="tl-label">4D SCENARIO REPLAY · OPEN-SOURCE EVENT RECONSTRUCTION · MIDDLE EAST FOCUS</div>
+    <div class="tl-controls">
+      <button class="tl-btn" id="play-btn" onclick="togglePlay()">▶ PLAY</button>
+      <button class="tl-btn" onclick="resetTL()">↺ RESET</button>
+      <button class="tl-btn on" onclick="recenter()">⌖ CENTER</button>
+      <div id="t-readout">T − 60:00</div>
+    </div>
+  </div>
+  <div class="tl-bar" id="tl-bar" onclick="seekTL(event)">
+    <div class="tl-fill" id="tl-fill" style="width:0%"></div>
+  </div>
+  <div class="tl-ticks">
+    <span>T−60 · SAT TASKED</span>
+    <span>T−45 · JAM SURGE</span>
+    <span>T−30 · DIVERSIONS</span>
+    <span>T−15 · FIR CLOSED</span>
+    <span>T±00 · ZERO HOUR</span>
+    <span>T+15 · NAVAL</span>
+    <span>T+30 · RE-ROUTE</span>
+    <span>T+60 · STABILIZE</span>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  MAP INIT — ESRI World Imagery (no API key needed)
+// ═══════════════════════════════════════════════════════
+const map = L.map('map',{
+  center:[29.5,52.0], zoom:5,
+  zoomControl:false,
+  attributionControl:false,
+  maxZoom:17, minZoom:2
+});
+
+L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {maxZoom:17, attribution:''}
+).addTo(map);
+
+// subtle annotation layer on top
+L.tileLayer(
+  'https://stamen-tiles-{s}.a.ssl.fastly.net/toner-hybrid/{z}/{x}/{y}.png',
+  {maxZoom:17, opacity:.18, attribution:''}
+).addTo(map);
+
+// ═══════════════════════════════════════════════════════
+//  DATA
+// ═══════════════════════════════════════════════════════
+const SAT_DATA = [
+  {id:'kh11',  name:'KH-11 CRYSTAL',    nation:'US', type:'recon',  col:'#ff9500', inc:97.4, period:88, phaseOff:0.1},
+  {id:'nro71', name:'USA-314 (NROL-71)',nation:'US', type:'recon',  col:'#ff9500', inc:63,   period:93, phaseOff:0.4},
+  {id:'s1a',   name:'SENTINEL-1A',      nation:'EU', type:'sar',    col:'#00ff88', inc:98.1, period:99, phaseOff:0.7},
+  {id:'s1b',   name:'SENTINEL-1B',      nation:'EU', type:'sar',    col:'#00ff88', inc:98.2, period:99, phaseOff:0.2},
+  {id:'wv3',   name:'WORLDVIEW-3',      nation:'US', type:'optical',col:'#00d4f0', inc:97.8, period:96, phaseOff:0.55},
+  {id:'ge1',   name:'MAXAR GE-1',       nation:'US', type:'optical',col:'#00d4f0', inc:98,   period:98, phaseOff:0.85},
+  {id:'pl1',   name:'PLANET DOVE-R3',   nation:'US', type:'optical',col:'#00d4f0', inc:97.5, period:92, phaseOff:0.15},
+  {id:'ofk16', name:'OFEK-16',          nation:'IL', type:'recon',  col:'#ffd700', inc:142,  period:91, phaseOff:0.65},
+  {id:'yaog',  name:'YAOGAN-36A',       nation:'CN', type:'recon',  col:'#ff4444', inc:35,   period:94, phaseOff:0.35},
+  {id:'cos',   name:'COSMOS-2576',      nation:'RU', type:'recon',  col:'#ff4444', inc:97.7, period:97, phaseOff:0.9},
+  {id:'cso3',  name:'CSO-3',            nation:'FR', type:'sar',    col:'#00ff88', inc:97.9, period:93, phaseOff:0.45},
+  {id:'tsx',   name:'TERRASAR-X',       nation:'DE', type:'sar',    col:'#00ff88', inc:97.4, period:95, phaseOff:0.75},
+  {id:'komp',  name:'KOMPSAT-5',        nation:'KR', type:'sar',    col:'#00ff88', inc:98.1, period:96, phaseOff:0.25},
+  {id:'risat', name:'RISAT-2BR2',       nation:'IN', type:'sar',    col:'#00ff88', inc:37,   period:97, phaseOff:0.6},
+  {id:'gok1',  name:'GÖKTÜRK-1',        nation:'TR', type:'optical',col:'#00d4f0', inc:98,   period:98, phaseOff:0.05},
+  {id:'wgs10', name:'WGS-10 (MIL)',     nation:'US', type:'recon',  col:'#ff8844', inc:0.05, period:1440,phaseOff:0.5},
+];
+
+const JAM_DATA = [
+  {lat:35.7, lon:51.4, name:'TEHRAN FIR',  intensity:'HIGH', radius:350000, col:'#ff2244'},
+  {lat:32.4, lon:48.7, name:'KHUZESTAN',   intensity:'MOD',  radius:200000, col:'#ff9500'},
+  {lat:30.3, lon:57.1, name:'KERMAN',      intensity:'HIGH', radius:280000, col:'#ff2244'},
+  {lat:36.3, lon:59.6, name:'MASHHAD',     intensity:'LOW',  radius:150000, col:'#ffdd00'},
+  {lat:29.6, lon:52.5, name:'SHIRAZ',      intensity:'MOD',  radius:180000, col:'#ff9500'},
+];
+
+const FLIGHT_DATA = [
+  {cs:'UAE123', from:'DXB', to:'IST', pts:[[25.3,55.4],[27.5,54.1],[29.8,52.2],[32.1,50.1],[34.8,47.3],[36.9,44.2]], status:'DIVERT', alt:37000},
+  {cs:'QTR441', from:'DOH', to:'VIE', pts:[[25.1,51.8],[27.2,51.0],[29.0,49.5],[31.2,47.8],[33.5,45.1],[36.2,42.0]], status:'DIVERT', alt:38000},
+  {cs:'GF035',  from:'BAH', to:'IST', pts:[[26.3,50.4],[28.1,49.6],[30.2,48.8],[32.5,47.2],[34.8,44.9],[37.1,41.8]], status:'DIVERT', alt:38000},
+  {cs:'FDB219', from:'DXB', to:'KWI', pts:[[25.3,55.4],[26.1,54.0],[26.9,52.5],[27.8,51.2],[28.4,50.1],[28.9,49.0]], status:'DIVERT', alt:30000},
+  {cs:'TK746',  from:'IST', to:'DXB', pts:[[41.0,29.0],[39.2,33.5],[36.8,38.0],[33.4,42.5],[30.1,47.0],[27.0,51.5],[25.3,55.4]], status:'RTB',    alt:36000},
+  {cs:'EK218',  from:'LHR', to:'DXB', pts:[[51.5,-0.1],[46.0,12.0],[40.0,22.0],[35.0,33.0],[30.0,42.0],[25.3,55.4]], status:'NORMAL', alt:39000},
+  {cs:'LH636',  from:'FRA', to:'MCT', pts:[[50.0,8.6],[45.0,18.0],[40.0,26.0],[35.5,34.0],[30.0,42.0],[26.0,52.0],[23.6,58.6]], status:'DIVERT', alt:38000},
+  {cs:'AF268',  from:'CDG', to:'DXB', pts:[[48.9,2.3],[44.0,13.0],[39.0,24.0],[34.0,34.0],[29.0,43.0],[25.3,55.4]], status:'NORMAL', alt:37000},
+];
+
+const VESSEL_DATA = [
+  {name:'USS FORD CVN-78',   type:'CARRIER',   lat:20.8, lon:61.5, spd:22.0, hdg:340, flag:'US', status:'ACTIVE', col:'#ff4444'},
+  {name:'HMS DIAMOND D34',   type:'DESTROYER', lat:21.5, lon:63.1, spd:16.2, hdg:5,   flag:'GB', status:'ACTIVE', col:'#ff4444'},
+  {name:'FS LANGUEDOC D653', type:'FRIGATE',   lat:22.1, lon:62.4, spd:15.0, hdg:350, flag:'FR', status:'ACTIVE', col:'#ff4444'},
+  {name:'CSS LIAONING',      type:'WARSHIP',   lat:23.4, lon:61.2, spd:18.5, hdg:315, flag:'CN', status:'ACTIVE', col:'#ff8844'},
+  {name:'MV PACIFIC STAR',   type:'CARGO',     lat:25.3, lon:56.8, spd:14.2, hdg:295, flag:'PA', status:'REROUTED',col:'#ff9500'},
+  {name:'MT GULF SPIRIT',    type:'TANKER',    lat:26.1, lon:55.2, spd:10.8, hdg:220, flag:'MH', status:'ANCHORED',col:'#ffdd00'},
+  {name:'MT BASRA WIND',     type:'TANKER',    lat:29.8, lon:48.9, spd:8.4,  hdg:135, flag:'IR', status:'HOLD',   col:'#ff9500'},
+  {name:'MV BALTICA',        type:'CARGO',     lat:24.8, lon:57.4, spd:12.1, hdg:180, flag:'PA', status:'NORMAL', col:'#00d4f0'},
+];
+
+const INTEL = [
+  {t:'14:52:31',type:'info',m:'SENTINEL-1A SAR pass tasked. Ground resolution 6m.'},
+  {t:'14:48:12',type:'warn',m:'GPS L1/L2 jamming confirmed · 5 zones active.'},
+  {t:'14:45:03',type:'warn',m:'QTR441 declaring AIRPROX. Off filed route.'},
+  {t:'14:41:55',type:'warn',m:'AIS loss: MT BASRA WIND. Last 29.8N 48.9E.'},
+  {t:'14:38:22',type:'crit',m:'USS FORD CVN-78 speed increase. New course 340°.'},
+  {t:'14:35:07',type:'info',m:'OFEK-16 orbital pass confirmed. 32N corridor.'},
+  {t:'14:31:44',type:'warn',m:'Iridium burst comms: +847% above 30-day avg.'},
+  {t:'14:28:15',type:'crit',m:'NOTAM: OIIX FIR closed FL000-UNL immediately.'},
+  {t:'14:24:53',type:'warn',m:'HMS DIAMOND D34 alters to Strait of Hormuz.'},
+  {t:'14:21:11',type:'info',m:'STARLINK terminal traffic +340% in region.'},
+  {t:'14:18:33',type:'warn',m:'COSMOS-2576 retasking maneuver · TLE delta-V.'},
+  {t:'14:15:00',type:'crit',m:'Aviation: 31 route diversions in 30 min.'},
+  {t:'14:11:44',type:'warn',m:'YAOGAN-36A orbital plane shift detected.'},
+  {t:'14:08:22',type:'crit',m:'AIS blackout expanding. 12nm radius.'},
+  {t:'14:05:01',type:'warn',m:'WGS-10 bandwidth +200%. Mil traffic surge.'},
+  {t:'14:01:33',type:'warn',m:'FR24 coverage gap: 4 commercial routes dropped.'},
+  {t:'13:58:11',type:'info',m:'Planet Labs SAR priority tasking logged.'},
+];
+
+const TL_PHASES = [
+  {pct:0,  col:'#00d4f0', lbl:'T−60', text:'T−60:00 · SATELLITE REPOSITIONING & TASKING'},
+  {pct:14, col:'#ff9500', lbl:'T−45', text:'T−45:00 · GPS JAMMING SURGE DETECTED'},
+  {pct:28, col:'#ff9500', lbl:'T−30', text:'T−30:00 · MASS COMMERCIAL DIVERSIONS'},
+  {pct:45, col:'#ff2244', lbl:'T−15', text:'T−15:00 · AIRSPACE CLOSURE DECLARED'},
+  {pct:60, col:'#ff2244', lbl:'T±00', text:'T±00:00 · ZERO HOUR · EVENT HORIZON'},
+  {pct:74, col:'#ff9500', lbl:'T+15', text:'T+15:00 · NAVAL ASSETS REPOSITIONING'},
+  {pct:87, col:'#00d4f0', lbl:'T+30', text:'T+30:00 · ALTERNATE ROUTING ESTABLISHED'},
+  {pct:96, col:'#00d4f0', lbl:'T+60', text:'T+60:00 · SITUATION STABILIZING'},
+];
+
+// ═══════════════════════════════════════════════════════
+//  LAYER GROUPS
+// ═══════════════════════════════════════════════════════
+const LG = {
+  sat: L.layerGroup().addTo(map),
+  jam: L.layerGroup().addTo(map),
+  flt: L.layerGroup().addTo(map),
+  mar: L.layerGroup().addTo(map),
+  roi: L.layerGroup().addTo(map),
+  cov: L.layerGroup().addTo(map),
+};
+
+function toggleLyr(name){
+  const btn=document.getElementById('lb-'+name);
+  if(map.hasLayer(LG[name])){ map.removeLayer(LG[name]); btn.classList.remove('on'); }
+  else { map.addLayer(LG[name]); btn.classList.add('on'); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  CUSTOM SVG ICON FACTORY
+// ═══════════════════════════════════════════════════════
+function svgIcon(svg, w=24, h=24){
+  return L.divIcon({html:svg, className:'', iconSize:[w,h], iconAnchor:[w/2,h/2]});
+}
+function satIcon(col){
+  return svgIcon(`<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="4" fill="${col}" fill-opacity=".9"/><circle cx="7" cy="7" r="6" fill="none" stroke="${col}" stroke-width=".8" stroke-opacity=".4"/><line x1="0" y1="7" x2="4" y2="7" stroke="${col}" stroke-width=".8" stroke-opacity=".6"/><line x1="10" y1="7" x2="14" y2="7" stroke="${col}" stroke-width=".8" stroke-opacity=".6"/></svg>`,14,14);
+}
+function planeIcon(col){
+  return svgIcon(`<svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 2 L10 8 L14 9 L10 10.5 L9 14 L8 12 L7 14 L6 10.5 L2 9 L6 8 Z" fill="${col}" fill-opacity=".9" stroke="${col}" stroke-width=".3"/></svg>`,16,16);
+}
+function shipIcon(col){
+  return svgIcon(`<svg width="12" height="16" viewBox="0 0 12 16"><polygon points="6,1 11,13 6,11 1,13" fill="${col}" fill-opacity=".9" stroke="${col}" stroke-width=".3"/></svg>`,12,16);
+}
+
+// ═══════════════════════════════════════════════════════
+//  SATELLITE GROUND TRACKS
+// ═══════════════════════════════════════════════════════
+function calcGroundTrack(inc, period, phaseOff, numPts=120){
+  const pts = [];
+  const T = period; // minutes per orbit
+  const earthRotRate = 360 / (24*60); // degrees/min
+  const startLon = phaseOff * 360 - 180;
+  for(let i=0;i<=numPts;i++){
+    const t = (i/numPts) * T * 2; // simulate 2 full orbits
+    const arg = (i/numPts) * 2*Math.PI;
+    const lat = inc > 90 ? Math.sin(arg)*(180-inc) : Math.sin(arg)*inc;
+    const lonShift = earthRotRate * t;
+    let lon = startLon + (i/numPts)*360*2 - lonShift;
+    while(lon > 180) lon -= 360;
+    while(lon < -180) lon += 360;
+    pts.push([lat, lon]);
+  }
+  return pts;
+}
+
+const satMarkers = [];
+SAT_DATA.forEach(s=>{
+  const track = calcGroundTrack(s.inc, s.period, s.phaseOff);
+  // Draw ground track in segments (handle date-line wrap)
+  let seg = [];
+  for(let i=0;i<track.length;i++){
+    if(i>0 && Math.abs(track[i][1]-track[i-1][1])>100){
+      if(seg.length>1) L.polyline(seg,{color:s.col,weight:0.8,opacity:0.35,dashArray:'4,6'}).addTo(LG.sat);
+      seg=[];
+    }
+    seg.push(track[i]);
+  }
+  if(seg.length>1) L.polyline(seg,{color:s.col,weight:0.8,opacity:0.35,dashArray:'4,6'}).addTo(LG.sat);
+
+  // Animated position marker
+  const m = L.marker(track[0], {icon:satIcon(s.col)}).addTo(LG.sat);
+  m.bindPopup(`<div class="popup-title">${s.name}</div><div>Nation: ${s.nation}</div><div>Type: ${s.type.toUpperCase()}</div><div>Period: ~${s.period} min</div>`);
+  satMarkers.push({s, track, m, t:s.phaseOff});
+});
+
+// ═══════════════════════════════════════════════════════
+//  JAMMING ZONES — pulsing circles
+// ═══════════════════════════════════════════════════════
+const jamCircles = [];
+JAM_DATA.forEach(z=>{
+  const c = L.circle([z.lat,z.lon],{
+    radius:z.radius, color:z.col, weight:1.5,
+    fillColor:z.col, fillOpacity:.06, opacity:.6, dashArray:'6,4'
+  }).addTo(LG.jam);
+  const c2 = L.circle([z.lat,z.lon],{
+    radius:z.radius*.55, color:z.col, weight:.8,
+    fillColor:z.col, fillOpacity:.04, opacity:.35
+  }).addTo(LG.jam);
+  const dot = L.circleMarker([z.lat,z.lon],{
+    radius:5, color:z.col, fillColor:z.col, fillOpacity:1, weight:0
+  }).addTo(LG.jam);
+  dot.bindPopup(`<div class="popup-title">GPS JAMMING · ${z.name}</div><div>Intensity: ${z.intensity}</div><div>Radius: ${z.radius/1000}km</div><div>Bands: L1 / L2 / L5</div>`);
+  jamCircles.push({c, c2, phase:Math.random()*Math.PI*2});
+});
+
+// ═══════════════════════════════════════════════════════
+//  FLIGHT PATHS
+// ═══════════════════════════════════════════════════════
+const fltMarkers = [];
+FLIGHT_DATA.forEach(f=>{
+  const col = f.status==='NORMAL'?'#00ff88':f.status==='DIVERT'?'#ff9500':'#ff2244';
+  L.polyline(f.pts,{color:col,weight:1.5,opacity:.5,dashArray:f.status==='NORMAL'?'none':'6,4'}).addTo(LG.flt);
+  const m = L.marker(f.pts[0],{icon:planeIcon(col)}).addTo(LG.flt);
+  m.bindPopup(`<div class="popup-title">${f.cs}</div><div>${f.from} → ${f.to}</div><div>Status: ${f.status}</div><div>Alt: FL${Math.floor(f.alt/100)}</div>`);
+  fltMarkers.push({f, pts:f.pts, m, t:0});
+});
+
+// ═══════════════════════════════════════════════════════
+//  MARITIME VESSELS
+// ═══════════════════════════════════════════════════════
+VESSEL_DATA.forEach(v=>{
+  const m = L.marker([v.lat,v.lon],{icon:shipIcon(v.col)}).addTo(LG.mar);
+  // Wake trail
+  const rad = v.hdg * Math.PI/180;
+  const trailEnd = [v.lat - Math.cos(rad)*.8, v.lon - Math.sin(rad)*.8];
+  L.polyline([[v.lat,v.lon],trailEnd],{color:v.col,weight:1.2,opacity:.35}).addTo(LG.mar);
+  // Course vector
+  const hdEnd = [v.lat + Math.cos(rad)*1.2, v.lon + Math.sin(rad)*1.2];
+  L.polyline([[v.lat,v.lon],hdEnd],{color:v.col,weight:1,opacity:.5,dashArray:'3,3'}).addTo(LG.mar);
+  m.bindPopup(`<div class="popup-title">${v.name}</div><div>Type: ${v.type}</div><div>Flag: ${v.flag}</div><div>Speed: ${v.spd} kts · Hdg: ${v.hdg}°</div><div>Status: ${v.status}</div>`);
+});
+
+// ═══════════════════════════════════════════════════════
+//  ROI — Region of Interest
+// ═══════════════════════════════════════════════════════
+// Iran bounding box
+const roiBounds = [[24.5, 44.0],[38.5, 63.5]];
+L.rectangle(roiBounds,{
+  color:'#ff2244', weight:1.5, fillColor:'#ff2244',
+  fillOpacity:.04, dashArray:'8,6', opacity:.6
+}).addTo(LG.roi);
+// Corner brackets
+[[24.5,44.0],[24.5,63.5],[38.5,44.0],[38.5,63.5]].forEach(([la,lo])=>{
+  L.circleMarker([la,lo],{radius:4,color:'#ff2244',fillColor:'#ff2244',fillOpacity:.8,weight:0}).addTo(LG.roi);
+});
+// Label
+L.marker([31.5,53.5],{icon:L.divIcon({html:`<div style="color:#ff224488;font-family:Share Tech Mono,monospace;font-size:9px;letter-spacing:4px;white-space:nowrap;text-shadow:0 0 8px #ff2244;">AREA OF INTEREST · IRAN FOCUS</div>`,className:'',iconAnchor:[90,8]})}).addTo(LG.roi);
+
+// Pulse rings around focal point
+for(let r=1;r<=4;r++){
+  L.circle([32.4,53.7],{
+    radius:r*120000, color:'#ff2244', weight:.7,
+    fillOpacity:0, opacity:.08*r, dashArray:'3,8'
+  }).addTo(LG.roi);
+}
+
+// ═══════════════════════════════════════════════════════
+//  NO-FLY ZONES
+// ═══════════════════════════════════════════════════════
+L.polygon([[24.5,44],[38.5,44],[38.5,63.5],[24.5,63.5]],{
+  color:'#ff9500',weight:0,fillColor:'#ff9500',fillOpacity:.04
+}).addTo(LG.cov);
+// FIR label
+L.marker([38.8,50.5],{icon:L.divIcon({html:`<div style="color:#ff9500;background:rgba(0,4,12,.85);border:1px solid rgba(255,149,0,.4);padding:2px 7px;font-family:Share Tech Mono,monospace;font-size:8px;letter-spacing:2px;white-space:nowrap;">NO-FLY · OIIX FIR CLOSED</div>`,className:'',iconAnchor:[70,10]})}).addTo(LG.cov);
+
+// ═══════════════════════════════════════════════════════
+//  UI POPULATION
+// ═══════════════════════════════════════════════════════
+const typeMap={recon:'b-recon',sar:'b-sar',optical:'b-opt',nav:'b-nav',comms:'b-com'};
+document.getElementById('sat-list').innerHTML=SAT_DATA.slice(0,12).map(s=>`
+<div class="item">
+  <div class="item-row">
+    <span><span class="pulse-dot ${s.type==='recon'?'pd-amb':s.type==='sar'?'pd-grn':'pd-cyn'}" style="width:4px;height:4px;margin-right:5px;"></span><span class="sat-name">${s.name}</span></span>
+    <span class="badge ${typeMap[s.type]||'b-com'}">${s.type.toUpperCase()}</span>
+  </div>
+  <div class="sat-nation">${s.nation} · ${s.period<200?'LEO':'GEO/MEO'}</div>
+</div>`).join('')+`<div style="font-size:8px;color:#1e4060;margin-top:4px;letter-spacing:1px;">+ ${SAT_DATA.length-12} ADDITIONAL TRACKED</div>`;
+
+document.getElementById('jam-list').innerHTML=JAM_DATA.map(z=>`
+<div class="item">
+  <div class="item-row">
+    <span class="jam-name">${z.name}</span>
+    <span class="badge" style="color:${z.intensity==='HIGH'?'#ff2244':z.intensity==='MOD'?'#ff9500':'#ffdd00'};border:1px solid ${z.intensity==='HIGH'?'#ff2244':z.intensity==='MOD'?'#ff9500':'#ffdd00'}">${z.intensity}</span>
+  </div>
+  <div class="jam-meta">RADIUS ${z.radius/1000}km · L1/L2/L5 AFFECTED</div>
+</div>`).join('');
+
+document.getElementById('flt-list').innerHTML=FLIGHT_DATA.map(f=>`
+<div class="item">
+  <div class="item-row">
+    <span style="color:#00d4f0">${f.cs}</span>
+    <span class="badge ${f.status==='NORMAL'?'b-nrm':f.status==='DIVERT'?'b-div':'b-crit'}">${f.status}</span>
+  </div>
+  <div style="font-size:8px;color:#1e4060">${f.from} → ${f.to} · FL${Math.floor(f.alt/100)}</div>
+</div>`).join('');
+
+document.getElementById('ship-list').innerHTML=VESSEL_DATA.map(v=>{
+  const naval=v.type==='CARRIER'||v.type==='DESTROYER'||v.type==='FRIGATE'||v.type==='WARSHIP';
+  return `<div class="item">
+  <div class="item-row">
+    <span style="font-size:8px;color:${naval?'#ff6644':'#4a9ac0'}">${v.name}</span>
+    <span style="font-size:7px;color:#1e4060">${v.flag}</span>
+  </div>
+  <div style="font-size:7px;color:#1e4060">${v.type} · ${v.spd}kt · ${v.status}</div>
+</div>`;}).join('');
+
+document.getElementById('intel-feed').innerHTML=INTEL.map(i=>`
+<div class="feed-item fi-${i.type}"><span class="fi-t">${i.t}</span>${i.m}</div>`).join('');
+
+// timeline markers
+(()=>{
+  const bar=document.getElementById('tl-bar');
+  TL_PHASES.forEach(e=>{
+    const m=document.createElement('div');
+    m.className='tl-marker';
+    m.style.cssText=`left:${e.pct}%;background:${e.col};`;
+    m.dataset.lbl=e.lbl;
+    m.style.color=e.col;
+    bar.appendChild(m);
+  });
+})();
+
+// auto-scroll feed
+setInterval(()=>{
+  const f=document.getElementById('intel-feed');
+  f.scrollTop+=0.8;
+  if(f.scrollTop>=f.scrollHeight-f.clientHeight) f.scrollTop=0;
+},50);
+
+// ═══════════════════════════════════════════════════════
+//  CLOCK
+// ═══════════════════════════════════════════════════════
+setInterval(()=>{
+  const n=new Date();
+  document.getElementById('utc-clock').textContent=
+    n.getUTCHours().toString().padStart(2,'0')+':'+
+    n.getUTCMinutes().toString().padStart(2,'0')+':'+
+    n.getUTCSeconds().toString().padStart(2,'0')+' UTC';
+},500);
+
+// ═══════════════════════════════════════════════════════
+//  ANIMATION LOOP — satellite & flight positions
+// ═══════════════════════════════════════════════════════
+let lastTime=0;
+function animLoop(ts){
+  requestAnimationFrame(animLoop);
+  const dt=(ts-lastTime)/1000; lastTime=ts;
+
+  // Move satellites along ground track
+  satMarkers.forEach((obj,i)=>{
+    obj.t=(obj.t+dt*0.012)%1;
+    const idx=Math.floor(obj.t*obj.track.length)%obj.track.length;
+    const pos=obj.track[idx];
+    obj.m.setLatLng(pos);
+  });
+
+  // Move flights along paths
+  fltMarkers.forEach(obj=>{
+    obj.t=(obj.t+dt*0.025)%1;
+    const idx=Math.min(Math.floor(obj.t*(obj.pts.length-1)),obj.pts.length-2);
+    const frac=obj.t*(obj.pts.length-1)-idx;
+    const la=obj.pts[idx][0]+(obj.pts[idx+1][0]-obj.pts[idx][0])*frac;
+    const lo=obj.pts[idx][1]+(obj.pts[idx+1][1]-obj.pts[idx][1])*frac;
+    obj.m.setLatLng([la,lo]);
+  });
+
+  // Pulse jamming rings
+  jamCircles.forEach((obj,i)=>{
+    obj.phase+=dt*1.4;
+    const a=.04+.02*Math.sin(obj.phase);
+    obj.c.setStyle({fillOpacity:a, opacity:.4+.25*Math.sin(obj.phase+1)});
+    obj.c2.setStyle({fillOpacity:a*.8, opacity:.25+.15*Math.sin(obj.phase+2)});
+  });
+}
+requestAnimationFrame(animLoop);
+
+// ═══════════════════════════════════════════════════════
+//  TIMELINE
+// ═══════════════════════════════════════════════════════
+let tPct=0, playing=false, playTimer=null;
+
+function getPhase(p){
+  let t=TL_PHASES[0];
+  TL_PHASES.forEach(ph=>{ if(p>=ph.pct) t=ph; });
+  return t;
+}
+function updateTL(){
+  document.getElementById('tl-fill').style.width=tPct+'%';
+  const offset=Math.round((tPct-60)*1.0);
+  const sign=offset<0?'−':'+';
+  const mm=Math.floor(Math.abs(offset)), ss=0;
+  document.getElementById('t-readout').textContent=`T${sign}${mm.toString().padStart(2,'0')}:${ss.toString().padStart(2,'0')}`;
+  const ph=getPhase(tPct);
+  document.getElementById('phase-banner').textContent=ph.text;
+  document.getElementById('phase-banner').style.borderColor=`${ph.col}88`;
+  document.getElementById('phase-banner').style.color=ph.col;
+
+  // change map tint based on phase
+  const tl=document.querySelector('.leaflet-tile-pane');
+  if(tPct>58&&tPct<65){
+    tl.style.filter='brightness(.55) saturate(1.6) hue-rotate(5deg) contrast(1.1)';
+  } else if(tPct>=65&&tPct<=75){
+    tl.style.filter='brightness(.5) saturate(2) hue-rotate(-5deg) contrast(1.2)';
+  } else {
+    tl.style.filter='brightness(.65) saturate(1.2) hue-rotate(10deg)';
+  }
+}
+function togglePlay(){
+  playing=!playing;
+  const btn=document.getElementById('play-btn');
+  btn.textContent=playing?'⏸ PAUSE':'▶ PLAY';
+  btn.classList.toggle('on',playing);
+  if(playing){
+    playTimer=setInterval(()=>{
+      tPct=Math.min(100,tPct+.25);
+      updateTL();
+      if(tPct>=100){ clearInterval(playTimer); playing=false; btn.textContent='▶ PLAY'; btn.classList.remove('on'); }
+    },80);
+  } else clearInterval(playTimer);
+}
+function resetTL(){ tPct=0; clearInterval(playTimer); playing=false; document.getElementById('play-btn').textContent='▶ PLAY'; document.getElementById('play-btn').classList.remove('on'); updateTL(); }
+function seekTL(e){ const b=document.getElementById('tl-bar').getBoundingClientRect(); tPct=Math.max(0,Math.min(100,((e.clientX-b.left)/b.width)*100)); updateTL(); }
+function recenter(){ map.flyTo([29.5,52.0],5,{duration:1.5}); }
+
+updateTL();
+</script>
+</body>
+</html>
